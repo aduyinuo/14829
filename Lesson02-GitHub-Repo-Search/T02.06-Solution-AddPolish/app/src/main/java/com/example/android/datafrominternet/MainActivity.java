@@ -15,8 +15,19 @@
  */
 package com.example.android.datafrominternet;
 
+import android.Manifest;
+import android.content.ContentResolver;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.pm.PackageInstaller;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.provider.CalendarContract;
+import android.support.v4.app.ActivityCompat;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -24,13 +35,17 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.provider.CalendarContract.*;
+import 	android.content.pm.PackageInstaller.*;
+import android.content.pm.PackageManager.*;
+import android.widget.Toast;
 
 import com.example.android.datafrominternet.utilities.NetworkUtils;
 
 import java.io.IOException;
 import java.net.URL;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements ActivityCompat.OnRequestPermissionsResultCallback{
 
     private EditText mSearchBoxEditText;
 
@@ -44,20 +59,43 @@ public class MainActivity extends AppCompatActivity {
     // COMPLETED (24) Create a ProgressBar variable to store a reference to the ProgressBar
     private ProgressBar mLoadingIndicator;
 
+    // Calendar related attributes
+    private final int REQUEST_PERMISSION_READ_CALENDAR = 1;
+    // Projection array. Creating indices for this array instead of doing
+    // dynamic lookups improves performance.
+    public static final String[] EVENT_PROJECTION = new String[]{
+            Calendars._ID,                           // 0
+            Calendars.ACCOUNT_NAME,                  // 1
+            Calendars.CALENDAR_DISPLAY_NAME,         // 2
+            Calendars.OWNER_ACCOUNT                  // 3
+    };
+
+    // The indices for the projection array above.
+    private static final int PROJECTION_ID_INDEX = 0;
+    private static final int PROJECTION_ACCOUNT_NAME_INDEX = 1;
+    private static final int PROJECTION_DISPLAY_NAME_INDEX = 2;
+    private static final int PROJECTION_OWNER_ACCOUNT_INDEX = 3;
+
+    public static final String[] APPOINTMENT_PROJECTION = new String[] {
+            Events._ID,
+            Events.CALENDAR_DISPLAY_NAME,
+            Events.TITLE,
+            Events.DESCRIPTION
+    };
+    private static final int EVENT_ID = 0;
+    private static final int EVENT_DISPLAY_NAME = 1;
+    private static final int EVENT_TITLE = 2;
+    private static final int EVENT_DESCRIPTIONS = 3;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         mSearchBoxEditText = (EditText) findViewById(R.id.et_search_box);
-
         mUrlDisplayTextView = (TextView) findViewById(R.id.tv_url_display);
         mSearchResultsTextView = (TextView) findViewById(R.id.tv_github_search_results_json);
-
-        // COMPLETED (13) Get a reference to the error TextView using findViewById
         mErrorMessageDisplay = (TextView) findViewById(R.id.tv_error_message_display);
-
-        // COMPLETED (25) Get a reference to the ProgressBar using findViewById
         mLoadingIndicator = (ProgressBar) findViewById(R.id.pb_loading_indicator);
     }
 
@@ -74,7 +112,6 @@ public class MainActivity extends AppCompatActivity {
         new GithubQueryTask().execute(githubSearchUrl);
     }
 
-    // COMPLETED (14) Create a method called showJsonDataView to show the data and hide the error
     /**
      * This method will make the View for the JSON data visible and
      * hide the error message.
@@ -89,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
         mSearchResultsTextView.setVisibility(View.VISIBLE);
     }
 
-    // COMPLETED (15) Create a method called showErrorMessage to show the error and hide the data
     /**
      * This method will make the error message visible and hide the JSON
      * View.
@@ -140,6 +176,97 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void requestPermission(String permissionName, int permissionRequestCode) {
+        ActivityCompat.requestPermissions(this,
+                new String[]{permissionName}, permissionRequestCode);
+    }
+
+    private void showExplanation(String title,
+                                 String message,
+                                 final String permission,
+                                 final int permissionRequestCode) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) {
+                        requestPermission(permission, permissionRequestCode);
+                    }
+                });
+        builder.create().show();
+    }
+
+    private void showCalendarInfo() {
+        mSearchResultsTextView.setText("Exhibit Calendar information here!\n\n");
+        StringBuilder sb = new StringBuilder();
+        sb.append("Exhibit Calendar information here!\n\n");
+        // Run query
+        Cursor cur = null;
+        ContentResolver cr = getContentResolver();
+        Uri uri = Events.CONTENT_URI;
+        // Submit the query and get a Cursor object back.
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    Manifest.permission.READ_CALENDAR)) {
+                showExplanation("Permission Needed", "Rationale", Manifest.permission.READ_CALENDAR, REQUEST_PERMISSION_READ_CALENDAR);
+            } else {
+                requestPermission(Manifest.permission.READ_CALENDAR, REQUEST_PERMISSION_READ_CALENDAR);
+            }
+        }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            cur = cr.query(uri, APPOINTMENT_PROJECTION, null, null, null);
+            // Use the cursor to step through the returned records
+            while (cur.moveToNext()) {
+                long calID = 0;
+                String displayName = null;
+                String title = null;
+                String discriptions = null;
+
+                // Get the field values
+                calID = cur.getLong(EVENT_ID);
+                displayName = cur.getString(EVENT_DISPLAY_NAME);
+                title = cur.getString(EVENT_TITLE);
+                discriptions = cur.getString(EVENT_DESCRIPTIONS);
+
+                // Do something with the values...
+                String record = String.format("%s, %s\n", displayName, title);
+                sb.append(record);
+            }
+            mSearchResultsTextView.setText(sb.toString());
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult (int requestCode,
+                                            String[] permissions,
+                                            int[] grantResults) {
+        switch (requestCode) {
+            case REQUEST_PERMISSION_READ_CALENDAR:
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0 &&
+                        grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Permission is granted. Continue the action or workflow
+                    // in your app.
+                }  else {
+                    // Explain to the user that the feature is unavailable because
+                    // the features requires a permission that the user has denied.
+                    // At the same time, respect the user's decision. Don't link to
+                    // system settings in an effort to convince the user to change
+                    // their decision.
+                    Context context = getApplicationContext();
+                    CharSequence text = "Calendar feature is not available without permission.\n" +
+                            "Please enable calendar access if you want to explore this function";
+                    int duration = Toast.LENGTH_SHORT;
+
+                    Toast toast = Toast.makeText(context, text, duration);
+                    toast.show();
+                }
+                return;
+        }
+        // Other 'case' lines to check for other
+        // permissions this app might request.
+    }
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main, menu);
@@ -151,6 +278,9 @@ public class MainActivity extends AppCompatActivity {
         int itemThatWasClickedId = item.getItemId();
         if (itemThatWasClickedId == R.id.action_search) {
             makeGithubSearchQuery();
+            return true;
+        } else if ((itemThatWasClickedId == R.id.action_calendar)) {
+            showCalendarInfo();
             return true;
         }
         return super.onOptionsItemSelected(item);
