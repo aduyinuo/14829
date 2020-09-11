@@ -16,16 +16,20 @@
 package com.example.android.datafrominternet;
 
 import android.Manifest;
+import android.annotation.TargetApi;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.CalendarContract;
+import android.provider.Settings;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
@@ -46,21 +50,23 @@ import java.io.IOException;
 import java.net.URL;
 
 public class MainActivity extends AppCompatActivity implements ActivityCompat.OnRequestPermissionsResultCallback{
-
     private EditText mSearchBoxEditText;
-
     private TextView mUrlDisplayTextView;
-
     private TextView mSearchResultsTextView;
-
-    // COMPLETED (12) Create a variable to store a reference to the error message TextView
     private TextView mErrorMessageDisplay;
-
-    // COMPLETED (24) Create a ProgressBar variable to store a reference to the ProgressBar
     private ProgressBar mLoadingIndicator;
 
-    // Calendar related attributes
+    /***************************************************************************
+     *                        Permission Request Codes                         *
+     ***************************************************************************
+     */
     private final int REQUEST_PERMISSION_READ_CALENDAR = 1;
+    private final int REQUEST_PERMISSION_SYSTEM_ALERT = 2;
+
+    /***************************************************************************
+     *                         ContentProvider Access                          *
+     ***************************************************************************
+     */
     // Projection array. Creating indices for this array instead of doing
     // dynamic lookups improves performance.
     public static final String[] EVENT_PROJECTION = new String[]{
@@ -69,19 +75,17 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
             Calendars.CALENDAR_DISPLAY_NAME,         // 2
             Calendars.OWNER_ACCOUNT                  // 3
     };
-
-    // The indices for the projection array above.
-    private static final int PROJECTION_ID_INDEX = 0;
-    private static final int PROJECTION_ACCOUNT_NAME_INDEX = 1;
-    private static final int PROJECTION_DISPLAY_NAME_INDEX = 2;
-    private static final int PROJECTION_OWNER_ACCOUNT_INDEX = 3;
-
     public static final String[] APPOINTMENT_PROJECTION = new String[] {
             Events._ID,
             Events.CALENDAR_DISPLAY_NAME,
             Events.TITLE,
             Events.DESCRIPTION
     };
+    // The indices for the projection array above.
+    private static final int PROJECTION_ID_INDEX = 0;
+    private static final int PROJECTION_ACCOUNT_NAME_INDEX = 1;
+    private static final int PROJECTION_DISPLAY_NAME_INDEX = 2;
+    private static final int PROJECTION_OWNER_ACCOUNT_INDEX = 3;
     private static final int EVENT_ID = 0;
     private static final int EVENT_DISPLAY_NAME = 1;
     private static final int EVENT_TITLE = 2;
@@ -98,7 +102,10 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
         mErrorMessageDisplay = (TextView) findViewById(R.id.tv_error_message_display);
         mLoadingIndicator = (ProgressBar) findViewById(R.id.pb_loading_indicator);
     }
-
+    /***************************************************************************
+     *                      Normal Permission: Internet Access                 *
+     ***************************************************************************
+     */
     /**
      * This method retrieves the search text from the EditText, constructs the
      * URL (using {@link NetworkUtils}) for the github repository you'd like to find, displays
@@ -176,6 +183,10 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
         }
     }
 
+    /***************************************************************************
+     *                   Dangerous Permission: Calendar Access                 *
+     ***************************************************************************
+     */
     private void requestPermission(String permissionName, int permissionRequestCode) {
         ActivityCompat.requestPermissions(this,
                 new String[]{permissionName}, permissionRequestCode);
@@ -267,6 +278,29 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
         // permissions this app might request.
     }
 
+    /***************************************************************************
+     *                     Special Permission: Calendar Access                 *
+     ***************************************************************************
+     */
+    private void getOverlayPermission() {
+        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        startActivityForResult(intent, REQUEST_PERMISSION_SYSTEM_ALERT);
+    }
+
+    @TargetApi(Build.VERSION_CODES.M)
+    private void showSystemAlert() {
+        // Check if permission granted
+        if (!Settings.canDrawOverlays(this)) {
+            // Request permission if not granted
+            getOverlayPermission();
+        }
+    }
+
+    /***************************************************************************
+     *                             Menu Functions                              *
+     ***************************************************************************
+     */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main, menu);
@@ -282,6 +316,8 @@ public class MainActivity extends AppCompatActivity implements ActivityCompat.On
         } else if ((itemThatWasClickedId == R.id.action_calendar)) {
             showCalendarInfo();
             return true;
+        } else if ((itemThatWasClickedId == R.id.action_alert)) {
+            showSystemAlert();
         }
         return super.onOptionsItemSelected(item);
     }
